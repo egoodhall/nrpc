@@ -9,10 +9,16 @@ import (
 
 func FindService(name string, pkgs []*packages.Package) (*packages.Package, *Service, error) {
 	for _, pkg := range pkgs {
+		// We should iterate over type definitions in the
+		// package, looking for an interface that matches
+		// the name that we have been given.
 		for ident, def := range pkg.TypesInfo.Defs {
 			if def != nil && def.Name() == name {
 				var err error
 				svc := new(Service)
+
+				// Inspect the node, looking for an interface declaration
+				// with methods, or other nested interfaces.
 				ast.Inspect(ident, func(n ast.Node) bool {
 					switch t := n.(type) {
 					case *ast.Ident:
@@ -65,8 +71,10 @@ func inspectTypeSpec(svc Service, d *ast.TypeSpec) ([]Method, error) {
 		for _, m := range i.Methods.List {
 			switch mtyp := m.Type.(type) {
 			case *ast.FuncType:
+				// We have a method declaration, so let's parse
+				// it and add it to our slice of methods.
 				for _, fident := range m.Names {
-					if mth, berr := buildMethod(fident); berr != nil {
+					if mth, berr := inspectMethod(fident); berr != nil {
 						return nil, fmt.Errorf("%s.%w", svc.Name, berr)
 					} else {
 						methods = append(methods, *mth)
@@ -89,7 +97,7 @@ func inspectTypeSpec(svc Service, d *ast.TypeSpec) ([]Method, error) {
 	return methods, nil
 }
 
-func buildMethod(id *ast.Ident) (*Method, error) {
+func inspectMethod(id *ast.Ident) (*Method, error) {
 	mth := &Method{
 		Name: id.Name,
 	}
@@ -144,9 +152,11 @@ func parseNamedField(field *ast.Field) (*NamedField, error) {
 
 	switch ptyp := field.Type.(type) {
 	case *ast.Ident:
+		// We have a type
 		namedField.Type = ptyp.Name
 		return namedField, nil
 	case *ast.StarExpr:
+		// We have a pointer type
 		namedField.Pointer = true
 		typ, err := getExprName(ptyp.X)
 		if err != nil {
@@ -155,6 +165,8 @@ func parseNamedField(field *ast.Field) (*NamedField, error) {
 		namedField.Type = typ
 		return namedField, nil
 	case *ast.SelectorExpr:
+		// We have a type imported from another
+		// package.
 		namedField.Type = ptyp.Sel.Name
 		typ, err := getExprName(ptyp.X)
 		if err != nil {

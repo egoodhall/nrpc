@@ -4,7 +4,7 @@ package example
 
 import (
 	"bytes"
-	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"github.com/nats-io/nats.go"
 	"sync"
@@ -13,19 +13,19 @@ import (
 
 // Response wrapper type for ExampleService.Time
 type exampleServiceTimeResponse struct {
-	Res time.Time
-	Err error
+	Ok  time.Time                `json:"ok"`
+	Err *ExampleServiceTimeError `json:"err"`
 }
 
 // Response wrapper type for ExampleService.Echo
 type exampleServiceEchoResponse struct {
-	Res string
-	Err error
+	Ok  string                   `json:"ok"`
+	Err *ExampleServiceEchoError `json:"err"`
 }
 
 // Response wrapper type for ExampleService.Restart
 type exampleServiceRestartResponse struct {
-	Err error
+	Err *ExampleServiceRestartError `json:"err"`
 }
 
 type ExampleServiceTimeError struct {
@@ -67,12 +67,6 @@ func (err *ExampleServiceRestartError) Is(other error) bool {
 	return is
 }
 
-func init() {
-	gob.Register(new(ExampleServiceTimeError))
-	gob.Register(new(ExampleServiceEchoError))
-	gob.Register(new(ExampleServiceRestartError))
-}
-
 // Client for accessing ExampleService over NATS RPC
 type exampleServiceClient struct {
 	options *ClientOptions
@@ -103,17 +97,21 @@ func (client *exampleServiceClient) Time() (response time.Time, err error) {
 
 	// Decode response into a wrapper object
 	var reswrap exampleServiceTimeResponse
-	if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(&reswrap); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(msg.Data)).Decode(&reswrap); err != nil {
 		return response, err
 	}
-	return reswrap.Res, reswrap.Err
+
+	if reswrap.Err != nil {
+		return reswrap.Ok, reswrap.Err
+	}
+	return reswrap.Ok, nil
 }
 
 // Implements ExampleService.Echo
 func (client *exampleServiceClient) Echo(message string) (response string, err error) {
 	// Encode request data from string using gob
 	buf := new(bytes.Buffer)
-	if err := gob.NewEncoder(buf).Encode(&message); err != nil {
+	if err := json.NewEncoder(buf).Encode(&message); err != nil {
 		return response, err
 	}
 
@@ -125,10 +123,14 @@ func (client *exampleServiceClient) Echo(message string) (response string, err e
 
 	// Decode response into a wrapper object
 	var reswrap exampleServiceEchoResponse
-	if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(&reswrap); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(msg.Data)).Decode(&reswrap); err != nil {
 		return response, err
 	}
-	return reswrap.Res, reswrap.Err
+
+	if reswrap.Err != nil {
+		return reswrap.Ok, reswrap.Err
+	}
+	return reswrap.Ok, nil
 }
 
 // Implements ExampleService.Restart
@@ -141,10 +143,14 @@ func (client *exampleServiceClient) Restart() (err error) {
 
 	// Decode response into a wrapper object
 	var reswrap exampleServiceRestartResponse
-	if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(&reswrap); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(msg.Data)).Decode(&reswrap); err != nil {
 		return err
 	}
-	return reswrap.Err
+
+	if reswrap.Err != nil {
+		return reswrap.Err
+	}
+	return nil
 }
 
 // Expose a ExampleService implementation over NATS RPC
@@ -198,17 +204,22 @@ func (server *exampleServiceServer) Start() error {
 		}
 	}()
 
-	if err := server.runExampleServiceServerLoop(server.options.Namespace+"ExampleService.Time", server.time); err != nil {
+	// Start Time server loop
+	if err := server._serve(server.options.Namespace+"ExampleService.Time", server.handleTime); err != nil {
 		close(server.stop)
 		close(server.errs)
 		return err
 	}
-	if err := server.runExampleServiceServerLoop(server.options.Namespace+"ExampleService.Echo", server.echo); err != nil {
+
+	// Start Echo server loop
+	if err := server._serve(server.options.Namespace+"ExampleService.Echo", server.handleEcho); err != nil {
 		close(server.stop)
 		close(server.errs)
 		return err
 	}
-	if err := server.runExampleServiceServerLoop(server.options.Namespace+"ExampleService.Restart", server.restart); err != nil {
+
+	// Start Restart server loop
+	if err := server._serve(server.options.Namespace+"ExampleService.Restart", server.handleRestart); err != nil {
 		close(server.stop)
 		close(server.errs)
 		return err
@@ -227,16 +238,15 @@ func (server *exampleServiceServer) Stop() error {
 		return nil
 	}
 
-	// Stop all workers, clean up
+	// Stop all workers, clean up subscriptions
 	close(server.stop)
+	close(server.errs)
 	server.stop = nil
-	if server.options.ErrorHandler != nil {
-		close(server.errs)
-	}
+	server.errs = nil
 	return nil
 }
 
-func (server *exampleServiceServer) runExampleServiceServerLoop(subject string, handler func(*nats.Msg)) error {
+func (server *exampleServiceServer) _serve(subject string, handler func(*nats.Msg)) error {
 	msgs := make(chan *nats.Msg, server.options.BufferSize)
 	sub, err := server.conn.ChanSubscribe(subject, msgs)
 	if err != nil {
@@ -264,7 +274,7 @@ func (server *exampleServiceServer) runExampleServiceServerLoop(subject string, 
 }
 
 // Exposes ExampleService.Time via NATS RPC
-func (server *exampleServiceServer) time(msg *nats.Msg) {
+func (server *exampleServiceServer) handleTime(msg *nats.Msg) {
 	defer func() {
 		if val := recover(); val != nil {
 			if err, ok := val.(error); ok {
@@ -278,11 +288,11 @@ func (server *exampleServiceServer) time(msg *nats.Msg) {
 		response.Err = errw
 		server.errs <- errw
 	} else {
-		response.Res = res
+		response.Ok = res
 	}
 
 	buf := new(bytes.Buffer)
-	if err := gob.NewEncoder(buf).Encode(response); err != nil {
+	if err := json.NewEncoder(buf).Encode(response); err != nil {
 		server.errs <- &ExampleServiceTimeError{err.Error()}
 	} else if err := msg.Respond(buf.Bytes()); err != nil {
 		server.errs <- &ExampleServiceTimeError{err.Error()}
@@ -290,7 +300,7 @@ func (server *exampleServiceServer) time(msg *nats.Msg) {
 }
 
 // Exposes ExampleService.Echo via NATS RPC
-func (server *exampleServiceServer) echo(msg *nats.Msg) {
+func (server *exampleServiceServer) handleEcho(msg *nats.Msg) {
 	defer func() {
 		if val := recover(); val != nil {
 			if err, ok := val.(error); ok {
@@ -300,7 +310,7 @@ func (server *exampleServiceServer) echo(msg *nats.Msg) {
 	}()
 	var request string
 	var response exampleServiceEchoResponse
-	if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(&request); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(msg.Data)).Decode(&request); err != nil {
 		errw := &ExampleServiceEchoError{err.Error()}
 		response.Err = errw
 		server.errs <- errw
@@ -309,11 +319,11 @@ func (server *exampleServiceServer) echo(msg *nats.Msg) {
 		response.Err = errw
 		server.errs <- errw
 	} else {
-		response.Res = res
+		response.Ok = res
 	}
 
 	buf := new(bytes.Buffer)
-	if err := gob.NewEncoder(buf).Encode(response); err != nil {
+	if err := json.NewEncoder(buf).Encode(response); err != nil {
 		server.errs <- &ExampleServiceEchoError{err.Error()}
 	} else if err := msg.Respond(buf.Bytes()); err != nil {
 		server.errs <- &ExampleServiceEchoError{err.Error()}
@@ -321,7 +331,7 @@ func (server *exampleServiceServer) echo(msg *nats.Msg) {
 }
 
 // Exposes ExampleService.Restart via NATS RPC
-func (server *exampleServiceServer) restart(msg *nats.Msg) {
+func (server *exampleServiceServer) handleRestart(msg *nats.Msg) {
 	defer func() {
 		if val := recover(); val != nil {
 			if err, ok := val.(error); ok {
@@ -337,7 +347,7 @@ func (server *exampleServiceServer) restart(msg *nats.Msg) {
 	}
 
 	buf := new(bytes.Buffer)
-	if err := gob.NewEncoder(buf).Encode(response); err != nil {
+	if err := json.NewEncoder(buf).Encode(response); err != nil {
 		server.errs <- &ExampleServiceRestartError{err.Error()}
 	} else if err := msg.Respond(buf.Bytes()); err != nil {
 		server.errs <- &ExampleServiceRestartError{err.Error()}
