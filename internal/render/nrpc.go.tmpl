@@ -54,13 +54,15 @@ type ServerOptions struct {
 	// Namespace will be added to the beginning of all NATS
 	// subjects the server listens on, effectively allowing
 	// multiple servers to be run.
-	Namespace    string
+	Namespace string
+	// QueueGroup can be used to ensure that requests are only
+	// sent to a single server when running multiple in parallel.
+	QueueGroup string
 	// A handler for errors that occur during service calls.
-	// Errors will be given
 	ErrorHandler func(error)
 	// The maximum number of pending messages that each endpoint
 	// in the server supports. This size is per-endpoint.
-	BufferSize   int
+	BufferSize int
 }
 
 func defaultServerOptions() *ServerOptions {
@@ -114,7 +116,7 @@ func Namespace(ns string) ClientOpt {
 
 // Set the maximum number of buffered messages
 // for each server endpoint
-func ServerBufferSize(bs int) ServerOpt {
+func BufferSize(bs int) ServerOpt {
 	return serverOptFunc(func(o *ServerOptions) error {
 		if bs >= 0 {
 			o.BufferSize = bs
@@ -124,16 +126,24 @@ func ServerBufferSize(bs int) ServerOpt {
 }
 
 // Set the error handler for the server
-func ServerErrorHandler(eh func(error)) ServerOpt {
+func ErrorHandler(eh func(error)) ServerOpt {
 	return serverOptFunc(func(o *ServerOptions) error {
 		o.ErrorHandler = eh
 		return nil
 	})
 }
 
+// Set the NATS queue group name for the server
+func QueueGroup(qg string) ServerOpt {
+	return serverOptFunc(func(o *ServerOptions) error {
+		o.QueueGroup = qg
+		return nil
+	})
+}
+
 // Set the maximum amount of time the client will wait
 // for a response from a server
-func ClientTimeout(to time.Duration) ClientOpt {
+func Timeout(to time.Duration) ClientOpt {
 	return clientOptFunc(func(o *ClientOptions) error {
 		if to > 0 {
 			o.Timeout = to

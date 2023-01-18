@@ -33,9 +33,7 @@ Flags:
 
 ### Example
 
-An example service can be found in `example/service.go`. When `go generate` is used on the example
-package, a client and server implementation will be generated for the `ExampleService` interface.
-Usage of the generated code is shown in `cmd/exampleserver` and `cmd/exampleclient`.
+An example service can be found in the `example` package. When `go generate ./example` is run, a client and server implementation will be generated for the `ExampleService` interface. Usage of the generated code is shown in `example/service_test.go`.
 
 ### Restrictions
 

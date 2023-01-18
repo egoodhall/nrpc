@@ -251,7 +251,8 @@ func (rnd *Renderer) renderServer(f *jen.File, svc astutil.Service) {
 		jen.Id("handler").Func().Params(jen.Op("*").Qual("github.com/nats-io/nats.go", "Msg")),
 	).Params(jen.Error()).BlockFunc(func(g *jen.Group) {
 		g.Id("msgs").Op(":=").Make(jen.Chan().Op("*").Qual("github.com/nats-io/nats.go", "Msg"), jen.Id("server").Dot("options").Dot("BufferSize"))
-		g.List(jen.Id("sub"), jen.Err()).Op(":=").Id("server").Dot("conn").Dot("ChanSubscribe").Params(jen.Id("subject"), jen.Id("msgs"))
+		g.Line()
+		g.List(jen.Id("sub"), jen.Err()).Op(":=").Id("server").Dot("conn").Dot("ChanQueueSubscribe").Params(jen.Id("subject"), jen.Id("server").Dot("options").Dot("QueueGroup"), jen.Id("msgs"))
 		g.If(jen.Err().Op("!=").Nil()).Block(
 			jen.Return(jen.Err()),
 		)
@@ -395,6 +396,8 @@ func (rnd *Renderer) renderServerMethod(svc astutil.Service, mth astutil.Method)
 				),
 			),
 		).Params()
+		g.Line()
+
 		if mth.Request != nil {
 			g.Var().Id("request").Id(mth.Request.Type)
 		}

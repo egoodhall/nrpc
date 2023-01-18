@@ -11,12 +11,6 @@ import (
 	"time"
 )
 
-// Response wrapper type for ExampleService.Time
-type exampleServiceTimeResponse struct {
-	Ok  time.Time                `json:"ok"`
-	Err *ExampleServiceTimeError `json:"err"`
-}
-
 // Response wrapper type for ExampleService.Echo
 type exampleServiceEchoResponse struct {
 	Ok  string                   `json:"ok"`
@@ -26,19 +20,6 @@ type exampleServiceEchoResponse struct {
 // Response wrapper type for ExampleService.Restart
 type exampleServiceRestartResponse struct {
 	Err *ExampleServiceRestartError `json:"err"`
-}
-
-type ExampleServiceTimeError struct {
-	Message string
-}
-
-func (err *ExampleServiceTimeError) Error() string {
-	return fmt.Sprintf("ExampleService.Time: %s", err.Message)
-}
-
-func (err *ExampleServiceTimeError) Is(other error) bool {
-	_, is := other.(*ExampleServiceTimeError)
-	return is
 }
 
 type ExampleServiceEchoError struct {
@@ -85,26 +66,6 @@ func NewExampleServiceClient(conn *nats.Conn, options ...ClientOpt) (ExampleServ
 		conn:    conn,
 		options: opts,
 	}, nil
-}
-
-// Implements ExampleService.Time
-func (client *exampleServiceClient) Time() (response time.Time, err error) {
-	// Send RPC message to ExampleService.Time
-	msg, err := client.conn.Request(client.options.Namespace+"ExampleService.Time", nil, client.options.Timeout)
-	if err != nil {
-		return response, err
-	}
-
-	// Decode response into a wrapper object
-	var reswrap exampleServiceTimeResponse
-	if err := json.NewDecoder(bytes.NewReader(msg.Data)).Decode(&reswrap); err != nil {
-		return response, err
-	}
-
-	if reswrap.Err != nil {
-		return reswrap.Ok, reswrap.Err
-	}
-	return reswrap.Ok, nil
 }
 
 // Implements ExampleService.Echo
@@ -204,13 +165,6 @@ func (server *exampleServiceServer) Start() error {
 		}
 	}()
 
-	// Start Time server loop
-	if err := server._serve(server.options.Namespace+"ExampleService.Time", server.handleTime); err != nil {
-		close(server.stop)
-		close(server.errs)
-		return err
-	}
-
 	// Start Echo server loop
 	if err := server._serve(server.options.Namespace+"ExampleService.Echo", server.handleEcho); err != nil {
 		close(server.stop)
@@ -248,7 +202,8 @@ func (server *exampleServiceServer) Stop() error {
 
 func (server *exampleServiceServer) _serve(subject string, handler func(*nats.Msg)) error {
 	msgs := make(chan *nats.Msg, server.options.BufferSize)
-	sub, err := server.conn.ChanSubscribe(subject, msgs)
+
+	sub, err := server.conn.ChanQueueSubscribe(subject, server.options.QueueGroup, msgs)
 	if err != nil {
 		return err
 	}
@@ -273,32 +228,6 @@ func (server *exampleServiceServer) _serve(subject string, handler func(*nats.Ms
 	return nil
 }
 
-// Exposes ExampleService.Time via NATS RPC
-func (server *exampleServiceServer) handleTime(msg *nats.Msg) {
-	defer func() {
-		if val := recover(); val != nil {
-			if err, ok := val.(error); ok {
-				server.errs <- err
-			}
-		}
-	}()
-	var response exampleServiceTimeResponse
-	if res, err := server.service.Time(); err != nil {
-		errw := &ExampleServiceTimeError{err.Error()}
-		response.Err = errw
-		server.errs <- errw
-	} else {
-		response.Ok = res
-	}
-
-	buf := new(bytes.Buffer)
-	if err := json.NewEncoder(buf).Encode(response); err != nil {
-		server.errs <- &ExampleServiceTimeError{err.Error()}
-	} else if err := msg.Respond(buf.Bytes()); err != nil {
-		server.errs <- &ExampleServiceTimeError{err.Error()}
-	}
-}
-
 // Exposes ExampleService.Echo via NATS RPC
 func (server *exampleServiceServer) handleEcho(msg *nats.Msg) {
 	defer func() {
@@ -308,6 +237,7 @@ func (server *exampleServiceServer) handleEcho(msg *nats.Msg) {
 			}
 		}
 	}()
+
 	var request string
 	var response exampleServiceEchoResponse
 	if err := json.NewDecoder(bytes.NewReader(msg.Data)).Decode(&request); err != nil {
@@ -339,6 +269,7 @@ func (server *exampleServiceServer) handleRestart(msg *nats.Msg) {
 			}
 		}
 	}()
+
 	var response exampleServiceRestartResponse
 	if err := server.service.Restart(); err != nil {
 		errw := &ExampleServiceRestartError{err.Error()}
