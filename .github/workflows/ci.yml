@@ -1,19 +1,9 @@
 on:
-  workflow_dispatch:
-    inputs:
-      segment:
-        description: Bump Segment
-        type: choice
-        required: true
-        default: patch
-        options:
-        - patch
-        - minor
-        - major
+  push:
 
 jobs:
-  release:
-    name: Release
+  ci:
+    name: CI
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v3
