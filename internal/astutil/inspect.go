@@ -4,100 +4,141 @@ import (
 	"fmt"
 	"go/ast"
 
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 )
 
 func FindService(name string, pkgs []*packages.Package) (*packages.Package, *Service, error) {
 	for _, pkg := range pkgs {
-		// We should iterate over type definitions in the
-		// package, looking for an interface that matches
-		// the name that we have been given.
-		for ident, def := range pkg.TypesInfo.Defs {
-			if def != nil && def.Name() == name {
-				var err error
-				svc := new(Service)
+		var svc *Service
+		var err error
+		var imports map[string]string
 
-				// Inspect the node, looking for an interface declaration
-				// with methods, or other nested interfaces.
-				ast.Inspect(ident, func(n ast.Node) bool {
-					switch t := n.(type) {
-					case *ast.Ident:
-						if t.Name == name {
-							svc.Name = t.Name
-							svc.Methods = make([]Method, 0)
-							if t.Obj.Kind == ast.Typ {
-								switch d := t.Obj.Decl.(type) {
-								case *ast.TypeSpec:
-									// We need to recursively inspect the type spec,
-									// since it could have nested interfaces in it.
-									methods, tserr := inspectTypeSpec(*svc, d)
-									if tserr != nil {
-										err = tserr
-										return false
-									}
-
-									// Deduplicate methods by name, so we don't accidentally
-									// generate duplicate code. The go type system will expose
-									// errors if the function signatures aren't identical, so
-									// we don't need to worry about name conflicts.
-									dedup := make(map[string]struct{})
-									for _, mth := range methods {
-										if _, ok := dedup[mth.Name]; !ok {
-											dedup[mth.Name] = struct{}{}
-											svc.Methods = append(svc.Methods, mth)
-										}
-									}
-								}
-							}
-						}
-					}
-					return false
-				})
-				if err != nil {
-					return nil, nil, fmt.Errorf("parse service: %w", err)
-				} else {
-					return pkg, svc, nil
-				}
+		inspector.New(pkg.Syntax).Nodes([]ast.Node{
+			new(ast.File),
+			new(ast.ImportSpec),
+			new(ast.TypeSpec),
+		}, func(n ast.Node, push bool) (proceed bool) {
+			if svc != nil || err != nil {
+				// We already found our type, and tried to introspect
+				// it. We don't need to see anything else.
+				return false
 			}
+
+			switch ntyp := n.(type) {
+			case *ast.File:
+				// We're on a new file, so we need to start
+				// a new import mapping.
+				imports = make(map[string]string)
+				return true
+			case *ast.ImportSpec:
+				if ntyp.Name != nil {
+					// We have an import with an aliased name.
+					// Let's store a mapping of alias -> path,
+					// so we can map the name if our service
+					// uses the import.
+					imports[ntyp.Name.Name] = ntyp.Path.Value[1 : len(ntyp.Path.Value)-1]
+				}
+				return false
+			case *ast.TypeSpec:
+				if ntyp.Name == nil || ntyp.Name.Name != name {
+					// This isn't our service declaration, so
+					// we can skip introspecting it.
+					return false
+				}
+
+				svc = new(Service)
+				svc.Name = ntyp.Name.Name
+				err = inspectTypeSpec(pkg, svc, ntyp)
+				return false
+			}
+			return false
+		})
+
+		if svc == nil {
+			// We didn't find the service in this package,
+			// so let's continue to the next one.
+			continue
+		}
+
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse service: %w", err)
+		} else if err := resolvePkgPaths(svc, imports); err != nil {
+			return nil, nil, err
+		} else {
+			return pkg, svc, nil
 		}
 	}
 	return nil, nil, fmt.Errorf("service not found: %s", name)
 }
 
-func inspectTypeSpec(svc Service, d *ast.TypeSpec) ([]Method, error) {
-	methods := make([]Method, 0)
+func resolvePkgPaths(svc *Service, imports map[string]string) error {
+	if len(imports) == 0 {
+		return nil
+	}
+
+	for _, mth := range svc.Methods {
+		if mth.Request != nil && mth.Request.Pkg != nil {
+			if path, ok := imports[*mth.Request.Pkg]; ok {
+				mth.Request.Pkg = &path
+			}
+		}
+		if mth.Response != nil && mth.Response.Pkg != nil {
+			if path, ok := imports[*mth.Response.Pkg]; ok {
+				mth.Response.Pkg = &path
+			}
+		}
+	}
+	return nil
+}
+
+func inspectTypeSpec(pkg *packages.Package, svc *Service, d *ast.TypeSpec) error {
+	if svc.Methods == nil {
+		svc.Methods = make([]Method, 0)
+	}
+
 	switch i := d.Type.(type) {
 	case *ast.InterfaceType:
-		for _, m := range i.Methods.List {
-			switch mtyp := m.Type.(type) {
-			case *ast.FuncType:
-				// We have a method declaration, so let's parse
-				// it and add it to our slice of methods.
-				for _, fident := range m.Names {
-					if mth, berr := inspectMethod(fident); berr != nil {
-						return nil, fmt.Errorf("%s.%w", svc.Name, berr)
-					} else {
-						methods = append(methods, *mth)
-					}
-				}
+		for _, embd := range i.Methods.List {
+			switch etyp := embd.Type.(type) {
 			case *ast.Ident:
 				// We have a nested interface definition, so
 				// we need to also add any methods from that.
-				switch ityp := mtyp.Obj.Decl.(type) {
+				switch ityp := etyp.Obj.Decl.(type) {
 				case *ast.TypeSpec:
-					mth, err := inspectTypeSpec(svc, ityp)
-					if err != nil {
-						return nil, err
+					return inspectTypeSpec(pkg, svc, ityp)
+				}
+			case *ast.FuncType:
+				// We have a method declaration, so let's parse
+				// it and add it to our slice of methods.
+				for _, fident := range embd.Names {
+					if mth, berr := inspectMethod(pkg, fident); berr != nil {
+						return fmt.Errorf("%s.%w", svc.Name, berr)
+					} else {
+						svc.Methods = append(svc.Methods, *mth)
 					}
-					methods = append(methods, mth...)
 				}
 			}
 		}
 	}
-	return methods, nil
+
+	// Deduplicate methods by name, so we don't accidentally
+	// generate duplicate implementations. The go type system
+	// will expose errors if the signatures aren't identical, so
+	// we don't need to worry about name conflicts.
+	dedup := make(map[string]struct{})
+	for idx, mth := range svc.Methods {
+		if _, ok := dedup[mth.Name]; ok {
+			svc.Methods = append(svc.Methods[:idx], svc.Methods[idx+1:]...)
+		} else {
+			dedup[mth.Name] = struct{}{}
+		}
+	}
+
+	return nil
 }
 
-func inspectMethod(id *ast.Ident) (*Method, error) {
+func inspectMethod(pkg *packages.Package, id *ast.Ident) (*Method, error) {
 	mth := &Method{
 		Name: id.Name,
 	}
@@ -119,7 +160,7 @@ func inspectMethod(id *ast.Ident) (*Method, error) {
 			if len(ft.Params.List) == 1 {
 				// We have a parameter, so we can set it on our method
 				// definition
-				mth.Request, err = parseNamedField(ft.Params.List[0])
+				mth.Request, err = parseType(nil, ft.Params.List[0].Type)
 				if err != nil {
 					return nil, fmt.Errorf("%s: request: %w", mth.Name, err)
 				}
@@ -129,7 +170,7 @@ func inspectMethod(id *ast.Ident) (*Method, error) {
 			case 2:
 				// 2 results is the only case where we need to parse out
 				// a response type. Otherwise, it's just an error.
-				mth.Response, err = parseNamedField(ft.Results.List[0])
+				mth.Response, err = parseType(nil, ft.Results.List[0].Type)
 				if err != nil {
 					return nil, fmt.Errorf("%s: response: %w", mth.Name, err)
 				}
@@ -140,50 +181,38 @@ func inspectMethod(id *ast.Ident) (*Method, error) {
 	return mth, nil
 }
 
-// parseNamedField collects information needed to render an implementation
+// parseType collects information needed to render an implementation
 // of an RPC method. We can guarantee that we only need the first name, due
-// to previous validation of the method.
-func parseNamedField(field *ast.Field) (*NamedField, error) {
-	namedField := new(NamedField)
-
-	if len(field.Names) > 0 {
-		namedField.Name = &field.Names[0].Name
+// to previous validation of the method. If the *Type passed in is nil,
+// one will be created.
+func parseType(typ *Type, expr ast.Expr) (*Type, error) {
+	if typ == nil {
+		typ = new(Type)
 	}
 
-	switch ptyp := field.Type.(type) {
-	case *ast.Ident:
-		// We have a type
-		namedField.Type = ptyp.Name
-		return namedField, nil
+	switch xtyp := expr.(type) {
 	case *ast.StarExpr:
 		// We have a pointer type
-		namedField.Pointer = true
-		typ, err := getExprName(ptyp.X)
-		if err != nil {
-			return nil, err
-		}
-		namedField.Type = typ
-		return namedField, nil
+		typ.Pointer = true
+		return parseType(typ, xtyp.X)
 	case *ast.SelectorExpr:
-		// We have a type imported from another
-		// package.
-		namedField.Type = ptyp.Sel.Name
-		typ, err := getExprName(ptyp.X)
-		if err != nil {
-			return nil, err
+		// We have a type imported from another package.
+		switch styp := xtyp.X.(type) {
+		case *ast.Ident:
+			typ.Pkg = &styp.Name
+		default:
+			return nil, fmt.Errorf("unexpected package expr type: %t", styp)
 		}
-		namedField.Pkg = &typ
-		return namedField, nil
-	default:
-		return nil, fmt.Errorf("unexpected param type: %+T", ptyp)
-	}
-}
-
-func getExprName(x ast.Expr) (string, error) {
-	switch xtyp := x.(type) {
+		return parseType(typ, xtyp.Sel)
+	case *ast.ArrayType:
+		// We have an array/slice of items
+		typ.Array = true
+		return parseType(typ, xtyp.Elt)
 	case *ast.Ident:
-		return xtyp.Name, nil
+		// We have a type name
+		typ.Type = xtyp.Name
+		return typ, nil
 	default:
-		return "", fmt.Errorf("unexpected param expression type: %+T", xtyp)
+		return nil, fmt.Errorf("unexpected param type: %+T", xtyp)
 	}
 }

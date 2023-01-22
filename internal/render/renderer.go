@@ -14,20 +14,18 @@ import (
 
 // Declare shared/reused types
 var (
-	natsConn = jen.Id("conn").Add(jen.Op("*")).Qual("github.com/nats-io/nats.go", "Conn")
+	natsConn  = jen.Id("conn").Add(jen.Op("*")).Qual("github.com/nats-io/nats.go", "Conn")
+	byteSlice = astutil.Type{
+		Array: true,
+		Type:  "byte",
+	}
 )
 
 //go:embed nrpc.go.tmpl
 var common string
 var commontmpl = template.Must(template.New("").Parse(common))
 
-type Renderer struct {
-	Client   bool
-	Server   bool
-	Encoding string
-}
-
-func (rnd *Renderer) Render(pkg *packages.Package, svc astutil.Service) error {
+func CommonDecls(pkg *packages.Package) error {
 	file, err := os.OpenFile("nrpc.gen.go", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
@@ -38,7 +36,17 @@ func (rnd *Renderer) Render(pkg *packages.Package, svc astutil.Service) error {
 		return err
 	}
 
-	file, err = os.OpenFile(svc.FileName(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	return nil
+}
+
+type Renderer struct {
+	Client   bool
+	Server   bool
+	Encoding string
+}
+
+func (rnd *Renderer) Render(pkg *packages.Package, svc astutil.Service) error {
+	file, err := os.OpenFile(svc.FileName(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
@@ -66,7 +74,7 @@ func (rnd *Renderer) renderResponseWrappers(f *jen.File, svc astutil.Service) {
 		f.Commentf("Response wrapper type for %s.%s", svc.Name, mth.Name)
 		f.Type().Id(mth.ResponseTypeName(svc)).StructFunc(func(g *jen.Group) {
 			if mth.Response != nil {
-				g.Id("Ok").Add(rnd.renderField(*mth.Response, "")).Tag(map[string]string{"json": "ok"})
+				g.Id("Ok").Add(rnd.renderType(*mth.Response)).Tag(map[string]string{"json": "ok"})
 			}
 			g.Id("Err").Op("*").Id(mth.ErrorTypeName(svc)).Tag(map[string]string{"json": "err"})
 		})
@@ -289,16 +297,16 @@ func (rnd *Renderer) renderServer(f *jen.File, svc astutil.Service) {
 
 func (rnd *Renderer) renderClientMethod(svc astutil.Service, mth astutil.Method) *jen.Statement {
 	return rnd.renderClientSignature(svc, mth).BlockFunc(func(g *jen.Group) {
-		if mth.Request != nil {
+		if mth.Request != nil && *mth.Request != byteSlice {
 			// We have a request type, so we need to encode it.
 			g.Commentf("Encode request data from %s using gob", mth.Request.Type)
 			g.Id("buf").Op(":=").New(jen.Qual("bytes", "Buffer"))
 			g.IfFunc(func(g *jen.Group) {
 				encode := jen.Err().Op(":=").Qual(rnd.encImport(), "NewEncoder").Params(jen.Id("buf")).Dot("Encode")
 				if mth.Request.Pointer {
-					g.Add(encode.Params(jen.Id(mth.Request.NameOrDefault("request"))))
+					g.Add(encode.Params(jen.Id("request")))
 				} else {
-					g.Add(encode.Params(jen.Op("&").Id(mth.Request.NameOrDefault("request"))))
+					g.Add(encode.Params(jen.Op("&").Id("request")))
 				}
 				g.Err().Op("!=").Nil()
 			}).BlockFunc(func(g *jen.Group) {
@@ -320,7 +328,11 @@ func (rnd *Renderer) renderClientMethod(svc astutil.Service, mth astutil.Method)
 		g.List(jen.Id("msg"), jen.Err()).Op(":=").Id("client").Dot("conn").Dot("Request").ParamsFunc(func(g *jen.Group) {
 			g.Add(jen.Id("client").Dot("options").Dot("Namespace").Op("+").Lit(mth.NatsSubject(svc)))
 			if mth.Request != nil {
-				g.Add(jen.Id("buf").Dot("Bytes").Params())
+				if *mth.Request != byteSlice {
+					g.Add(jen.Id("buf").Dot("Bytes").Params())
+				} else {
+					g.Add(jen.Id("request"))
+				}
 			} else {
 				g.Add(jen.Nil())
 			}
@@ -375,13 +387,13 @@ func (rnd *Renderer) renderClientSignature(svc astutil.Service, mth astutil.Meth
 		// Parameters for our method
 		ParamsFunc(func(g *jen.Group) {
 			if mth.Request != nil {
-				g.Add(rnd.renderField(*mth.Request, "request"))
+				g.Id("request").Add(rnd.renderType(*mth.Request))
 			}
 		}).
 		// Response types for our method
 		ParamsFunc(func(g *jen.Group) {
 			if mth.Response != nil {
-				g.Add(rnd.renderField(*mth.Response, "response"))
+				g.Id("response").Add(rnd.renderType(*mth.Response))
 			}
 			g.Err().Error()
 		})
@@ -399,15 +411,18 @@ func (rnd *Renderer) renderServerMethod(svc astutil.Service, mth astutil.Method)
 		g.Line()
 
 		if mth.Request != nil {
-			g.Var().Id("request").Id(mth.Request.Type)
+			stmt := g.Var().Id("request").Add(rnd.renderType(*mth.Request))
+			if *mth.Request == byteSlice {
+				stmt.Op("=").Id("msg").Dot("Data")
+			}
 		}
 		g.Var().Id("response").Id(mth.ResponseTypeName(svc))
 
 		stmt := jen.Add()
-		if mth.Request != nil {
+		if mth.Request != nil && *mth.Request != byteSlice {
 			// We have a request type, so we need to decode it
 			// before we can call the service method
-			stmt = jen.If(
+			stmt.If(
 				jen.Err().Op(":=").Qual(rnd.encImport(), "NewDecoder").Params(jen.Qual("bytes", "NewReader").Params(jen.Id("msg").Dot("Data"))).Dot("Decode").Params(jen.Op("&").Id("request")),
 				jen.Err().Op("!=").Nil(),
 			).Block(
@@ -418,7 +433,7 @@ func (rnd *Renderer) renderServerMethod(svc astutil.Service, mth astutil.Method)
 		}
 
 		// Now we can make the service call
-		stmt = stmt.If(
+		stmt.If(
 			jen.ListFunc(func(g *jen.Group) {
 				if mth.Response != nil {
 					g.Id("res")
@@ -440,7 +455,7 @@ func (rnd *Renderer) renderServerMethod(svc astutil.Service, mth astutil.Method)
 		// on the response wrapper if there wasn't an error
 		// returned from the service method.
 		if mth.Response != nil {
-			stmt = stmt.Else().Block(
+			stmt.Else().Block(
 				jen.Id("response").Dot("Ok").Op("=").Id("res"),
 			)
 		}
@@ -472,18 +487,23 @@ func (rnd *Renderer) renderServerSignature(svc astutil.Service, mth astutil.Meth
 		Params(jen.Id("msg").Op("*").Qual("github.com/nats-io/nats.go", "Msg"))
 }
 
-func (rnd *Renderer) renderField(nf astutil.NamedField, defaultName string) *jen.Statement {
+func (rnd *Renderer) renderType(nf astutil.Type) *jen.Statement {
 	stmt := jen.Add()
-	if defaultName != "" {
-		stmt = stmt.Id(nf.NameOrDefault(defaultName))
+	// []
+	if nf.Array {
+		stmt.Index()
 	}
+	// *
 	if nf.Pointer {
-		stmt = stmt.Op("*")
+		stmt.Op("*")
 	}
+	// pkg.Type or Type
 	if nf.Pkg != nil {
-		return stmt.Qual(*nf.Pkg, nf.Type)
+		stmt.Qual(*nf.Pkg, nf.Type)
+	} else {
+		stmt.Id(nf.Type)
 	}
-	return stmt.Id(nf.Type)
+	return stmt
 }
 
 func (rnd *Renderer) encImport() string {

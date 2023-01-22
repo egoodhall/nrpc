@@ -125,7 +125,7 @@ func BufferSize(bs int) ServerOpt {
 	})
 }
 
-// Set the error handler for the server
+// Set the error handler for the server.
 func ErrorHandler(eh func(error)) ServerOpt {
 	return serverOptFunc(func(o *ServerOptions) error {
 		o.ErrorHandler = eh

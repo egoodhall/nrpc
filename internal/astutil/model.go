@@ -25,8 +25,8 @@ func (svc Service) FileName() string {
 
 type Method struct {
 	Name     string
-	Request  *NamedField
-	Response *NamedField
+	Request  *Type
+	Response *Type
 }
 
 func (mth Method) NatsSubject(svc Service) string {
@@ -45,16 +45,9 @@ func (mth Method) ErrorTypeName(svc Service) string {
 	return fmt.Sprintf("%s%sError", strcase.ToCamel(svc.Name), strcase.ToCamel(mth.Name))
 }
 
-type NamedField struct {
+type Type struct {
+	Array   bool
 	Pointer bool
-	Name    *string
 	Pkg     *string
 	Type    string
-}
-
-func (nf NamedField) NameOrDefault(defaultName string) string {
-	if nf.Name != nil {
-		return *nf.Name
-	}
-	return defaultName
 }

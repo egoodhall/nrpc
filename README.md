@@ -1,8 +1,6 @@
-# NATS RPC
+# NRPC
 
-A code generator for NATS-based RPC services. NRPC services are defined as go interfaces. The NRPC
-binary can then generate server and client implementations that will make the interface transparently
-accessible over a NATS connection.
+A code generator for NATS-based RPC services. Services are defined as go interfaces.
 
 ### Installation
 
