@@ -20,4 +20,4 @@ jobs:
           ${{ github.ref_name }}-${{ github.event.before }}
           main-${{ github.event.before }}
 
-    - run: go run github.com/emm035/gravel@latest build
+    - run: go run github.com/emm035/gravel/cmd/gravel@latest build
