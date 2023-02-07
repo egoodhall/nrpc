@@ -1,0 +1,24 @@
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        description: Release Type
+        type: choice
+        options:
+        - major
+        - minor
+        - patch
+        default: patch
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-go@v3
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - run: go build ./cmd/nrpc

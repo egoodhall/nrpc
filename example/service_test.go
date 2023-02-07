@@ -32,7 +32,7 @@ func TestServerAndClientWorkTogether(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server, err := example.NewExampleServiceServer(new(example.ServiceImpl), newConn(t, nsrv))
+	server, err := example.NewExampleServiceServer(newConn(t, nsrv), new(example.ServiceImpl))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,13 +48,9 @@ func TestServerAndClientWorkTogether(t *testing.T) {
 		}
 	}()
 
-	if err := client.Restart(); err != nil {
+	if response, err := client.Echo(&example.EchoRequest{Message: "Test!"}); err != nil {
 		t.Fatal(err)
-	}
-
-	if response, err := client.Echo("Test!"); err != nil {
-		t.Fatal(err)
-	} else if response != "Test!" {
+	} else if response.Message != "Test!" {
 		t.Fatalf("Response does not match: '%s' != 'Test!'", response)
 	}
 }
