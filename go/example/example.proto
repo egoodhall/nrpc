@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "github.com/emm035/nrpc/example";
+option go_package = "github.com/emm035/nrpc/go/example";
 
 service ExampleService {
   rpc Echo(EchoRequest) returns (EchoReply);

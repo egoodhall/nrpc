@@ -4,33 +4,33 @@ import (
 	"fmt"
 
 	"github.com/dave/jennifer/jen"
-	"github.com/emm035/nrpc/internal/parse"
+	"github.com/emm035/nrpc/go/internal/parse"
 	"github.com/iancoleman/strcase"
 	"github.com/sourcegraph/conc/pool"
 )
 
 const (
 	pkgNats  = "github.com/nats-io/nats.go"
-	pkgNrpc  = "github.com/emm035/nrpc/pkg/nrpc"
+	pkgNrpc  = "github.com/emm035/nrpc/go/pkg/nrpc"
 	pkgProto = "google.golang.org/protobuf/proto"
 	pkgAnypb = "google.golang.org/protobuf/types/known/anypb"
 )
 
 var (
 	requestWrapper = parse.Type{
-		Package: "github.com/emm035/nrpc/pkg/nrpc",
+		Package: "github.com/emm035/nrpc/go/pkg/nrpc",
 		Name:    "RequestWrapper",
 	}
 	responseWrapper = parse.Type{
-		Package: "github.com/emm035/nrpc/pkg/nrpc",
+		Package: "github.com/emm035/nrpc/go/pkg/nrpc",
 		Name:    "ResponseWrapper",
 	}
 	responseWrapperOk = parse.Type{
-		Package: "github.com/emm035/nrpc/pkg/nrpc",
+		Package: "github.com/emm035/nrpc/go/pkg/nrpc",
 		Name:    "ResponseWrapper_Ok",
 	}
 	responseWrapperErr = parse.Type{
-		Package: "github.com/emm035/nrpc/pkg/nrpc",
+		Package: "github.com/emm035/nrpc/go/pkg/nrpc",
 		Name:    "ResponseWrapper_Err",
 	}
 )

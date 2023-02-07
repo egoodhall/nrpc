@@ -4,8 +4,8 @@ import (
 	"errors"
 	"flag"
 
-	"github.com/emm035/nrpc/internal/parse"
-	"github.com/emm035/nrpc/internal/render"
+	"github.com/emm035/nrpc/go/internal/parse"
+	"github.com/emm035/nrpc/go/internal/render"
 	"google.golang.org/protobuf/compiler/protogen"
 )
 

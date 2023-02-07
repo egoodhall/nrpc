@@ -5,7 +5,7 @@ package example
 import (
 	"errors"
 	"fmt"
-	"github.com/emm035/nrpc/pkg/nrpc"
+	"github.com/emm035/nrpc/go/pkg/nrpc"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"

@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "github.com/emm035/nrpc/pkg/nrpc";
+option go_package = "github.com/emm035/nrpc/go/pkg/nrpc";
 
 import "google/protobuf/any.proto";
 
