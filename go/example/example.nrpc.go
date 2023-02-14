@@ -47,7 +47,7 @@ func (client *exampleServiceClient) Echo(request *EchoRequest) (*EchoReply, erro
 		return nil, err
 	}
 
-	resmsg, err := client.conn.Request(fmt.Sprintf("%s.ExampleService.Echo", client.options.Namespace), data, client.options.Timeout)
+	resmsg, err := client.conn.Request(client.options.ApplyNamespace("ExampleService.Echo"), data, client.options.Timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (server *exampleServiceServer) Start() error {
 	}()
 
 	// Start Echo server loop
-	if err := server.startSubscription(fmt.Sprintf("%s.ExampleService.Echo", server.options.Namespace), server.serveEcho); err != nil {
+	if err := server.startSubscription(server.options.ApplyNamespace("ExampleService.Echo"), server.serveEcho); err != nil {
 		close(server.stop)
 		close(server.errs)
 		return err

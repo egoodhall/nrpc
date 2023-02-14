@@ -405,10 +405,8 @@ func (gen *Generator) serverHandlerName(method parse.Method) jen.Code {
 }
 
 func (gen *Generator) natsSubject(container string, service parse.Service, method parse.Method) jen.Code {
-	return jen.Qual("fmt", "Sprintf").Params(
-		jen.Lit(fmt.Sprintf("%%s.%s.%s", service.Name, method.Name)),
-		jen.Id(container).Dot("options").Dot("Namespace"),
-	)
+	return jen.Id(container).Dot("options").Dot("ApplyNamespace").
+		Params(jen.Lit(fmt.Sprintf("%s.%s", service.Name, method.Name)))
 }
 
 func (gen *Generator) typeName(typ parse.Type, pointer bool) jen.Code {
