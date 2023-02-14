@@ -112,7 +112,7 @@ func (cof clientOptFunc) setClient(o *ClientOptions) error {
 }
 
 // Set the namespace used for all NATS subjects
-func Namespace(ns string) ClientOption {
+func Namespace(ns string) Option {
 	return newOpt(
 		func(o *ServerOptions) error {
 			if ns != "" {
