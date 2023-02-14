@@ -1,6 +1,8 @@
 package nrpc
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -142,6 +144,18 @@ func Namespace(ns string) Option {
 			return nil
 		},
 	)
+}
+
+// Generate a namespace by taking a SHA-256 hash of
+// the inputs. This is useful for generating a namespace
+// from values that may have illegal characters for a
+// NATS subject name.
+func HashNamespace(inputs ...string) Option {
+	hash := sha256.New()
+	for _, seg := range inputs {
+		hash.Write([]byte(seg))
+	}
+	return Namespace(hex.EncodeToString(hash.Sum(nil)))
 }
 
 // Set the maximum number of buffered messages
