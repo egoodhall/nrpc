@@ -2,6 +2,7 @@ package nrpc
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -47,6 +48,13 @@ type ClientOptions struct {
 	Namespace string
 }
 
+func (opt *ServerOptions) ApplyNamespace(to string) string {
+	if opt.Namespace != "" {
+		return fmt.Sprintf("%s.%s", opt.Namespace, to)
+	}
+	return to
+}
+
 func NewClientOptions(options ...ClientOption) (*ClientOptions, error) {
 	clientOptions := &ClientOptions{
 		Timeout: 10 * time.Second,
@@ -72,6 +80,13 @@ type ServerOptions struct {
 	// The maximum number of pending messages that each endpoint
 	// in the server supports. This size is per-endpoint.
 	BufferSize int
+}
+
+func (opt *ClientOptions) ApplyNamespace(to string) string {
+	if opt.Namespace != "" {
+		return fmt.Sprintf("%s.%s", opt.Namespace, to)
+	}
+	return to
 }
 
 func NewServerOptions(options ...ServerOption) (*ServerOptions, error) {
@@ -112,7 +127,7 @@ func (cof clientOptFunc) setClient(o *ClientOptions) error {
 }
 
 // Set the namespace used for all NATS subjects
-func Namespace(ns string) ClientOption {
+func Namespace(ns string) Option {
 	return newOpt(
 		func(o *ServerOptions) error {
 			if ns != "" {
