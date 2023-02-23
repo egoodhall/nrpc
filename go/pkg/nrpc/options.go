@@ -133,13 +133,13 @@ func Namespace(ns string) Option {
 	return newOpt(
 		func(o *ServerOptions) error {
 			if ns != "" {
-				o.Namespace = strings.Trim(ns, ".") + "."
+				o.Namespace = strings.Trim(ns, ".")
 			}
 			return nil
 		},
 		func(o *ClientOptions) error {
 			if ns != "" {
-				o.Namespace = strings.Trim(ns, ".") + "."
+				o.Namespace = strings.Trim(ns, ".")
 			}
 			return nil
 		},
