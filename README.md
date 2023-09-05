@@ -5,7 +5,7 @@ A code generator for NATS-based RPC services. Services are defined as go interfa
 ### Installation
 
 ```
-go install github.com/emm035/nrpc@latest
+go install github.com/egoodhall/nrpc@latest
 ```
 
 ### Usage

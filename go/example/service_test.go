@@ -3,7 +3,7 @@ package example_test
 import (
 	"testing"
 
-	"github.com/emm035/nrpc/go/example"
+	"github.com/egoodhall/nrpc/go/example"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"

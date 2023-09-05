@@ -1,4 +1,4 @@
-module github.com/emm035/nrpc/go
+module github.com/egoodhall/nrpc/go
 
 go 1.19
 
