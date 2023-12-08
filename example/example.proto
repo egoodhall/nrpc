@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+// Go options
+option go_package = "github.com/egoodhall/nrpc/example/go;example";
+
+// Java options
+option java_package = "com.egoodhall.nrpc.example";
+option java_multiple_files = true;
+
+// Define a service type. Interfaces will be generated in
+// each language for this service - they can be implemented
+// in code & used with NATS.
+service ExampleService {
+  rpc Echo(EchoRequest) returns (EchoReply);
+}
+
+// A request type
+message EchoRequest {
+  string message = 1;
+}
+
+// A response type
+message EchoReply {
+  string message = 1;
+}

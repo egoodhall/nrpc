@@ -1,5 +1,11 @@
 syntax = "proto3";
+
+// Go options
 option go_package = "github.com/egoodhall/nrpc/go/pkg/nrpc";
+
+// Java options
+option java_package = "com.egoodhall.nrpc";
+option java_multiple_files = true;
 
 import "google/protobuf/any.proto";
 
