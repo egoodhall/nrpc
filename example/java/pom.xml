@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.egoodhall</groupId>
+    <artifactId>nrpc-java-parent</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>nrpc-example</artifactId>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.nats</groupId>
+      <artifactId>jnats</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.immutables</groupId>
+      <artifactId>value</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.egoodhall</groupId>
+      <artifactId>nrpc-models</artifactId>
+      <version>1.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>com.egoodhall</groupId>
+      <artifactId>nrpc-gen</artifactId>
+      <version>1.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.nats</groupId>
+      <artifactId>jnats-server-runner</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.xolstice.maven.plugins</groupId>
+        <artifactId>protobuf-maven-plugin</artifactId>
+        <version>${dep.protobuf-maven-plugin.version}</version>
+        <configuration>
+          <protocPlugins>
+            <protocPlugin combine.self="append">
+              <id>nrpc-gen</id>
+              <groupId>com.egoodhall</groupId>
+              <artifactId>nrpc-gen</artifactId>
+              <version>${project.version}</version>
+              <mainClass>com.egoodhall.nrpc.gen.NrpcGenerator</mainClass>
+            </protocPlugin>
+            <protocPlugin>
+              <id>dump</id>
+              <groupId>com.salesforce.servicelibs</groupId>
+              <artifactId>jprotoc</artifactId>
+              <version>${dep.jprotoc.version}</version>
+              <mainClass>com.salesforce.jprotoc.dump.DumpGenerator</mainClass>
+            </protocPlugin>
+          </protocPlugins>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

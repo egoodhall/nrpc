@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.egoodhall</groupId>
+    <artifactId>nrpc-java-parent</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>nrpc-models</artifactId>
+
+  <properties>
+    <maven.compiler.source>20</maven.compiler.source>
+    <maven.compiler.target>20</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <dep.auto-value.version>1.10.4</dep.auto-value.version>
+    <dep.nats.version>2.16.13</dep.nats.version>
+    <dep.guava.version>31.1-jre</dep.guava.version>
+    <dep.protobuf.version>3.22.2</dep.protobuf.version>
+    <dep.immutables.version>2.9.3</dep.immutables.version>
+    <dep.os-maven-plugin.version>1.6.0</dep.os-maven-plugin.version>
+    <dep.protobuf-maven-plugin.version>0.6.1</dep.protobuf-maven-plugin.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.nats</groupId>
+        <artifactId>jnats</artifactId>
+        <version>${dep.nats.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.immutables</groupId>
+        <artifactId>value</artifactId>
+        <version>${dep.immutables.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>${dep.guava.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java</artifactId>
+        <version>${dep.protobuf.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.egoodhall</groupId>
+        <artifactId>nrpc-gen</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.egoodhall</groupId>
+        <artifactId>nrpc-models</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.nats</groupId>
+      <artifactId>jnats</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.immutables</groupId>
+      <artifactId>value</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+  
+</project>
