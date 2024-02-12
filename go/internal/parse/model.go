@@ -12,17 +12,18 @@ type File struct {
 
 type Service struct {
 	Name    string
+	RawName string
 	Methods []Method
 }
 
 type Method struct {
-	Name   string
-	Input  Type
-	Output Type
+	Name    string
+	RawName string
+	Input   Type
+	Output  Type
 }
 
 type Type struct {
 	Name    string
 	Package string
-	Stream  bool
 }

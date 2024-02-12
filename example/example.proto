@@ -10,8 +10,8 @@ option java_multiple_files = true;
 // Define a service type. Interfaces will be generated in
 // each language for this service - they can be implemented
 // in code & used with NATS.
-service ExampleService {
-  rpc Echo(EchoRequest) returns (EchoReply);
+service EchoService {
+  rpc echo(EchoRequest) returns (EchoReply);
 }
 
 // A request type

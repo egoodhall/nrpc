@@ -1,6 +1,6 @@
 module github.com/egoodhall/nrpc/example/go
 
-go 1.21.3
+go 1.21
 
 require (
 	github.com/egoodhall/nrpc/go v0.0.0-20231206035953-1a0e7dd0d808

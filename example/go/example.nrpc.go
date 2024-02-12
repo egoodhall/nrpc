@@ -4,200 +4,122 @@ package example
 
 import (
 	"errors"
-	"fmt"
+	"strconv"
+
 	"github.com/egoodhall/nrpc/go/pkg/nrpc"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/micro"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
-	"sync"
 )
 
-type ExampleService interface {
+type EchoService interface {
 	Echo(*EchoRequest) (*EchoReply, error)
 }
 
-func NewExampleServiceClient(conn *nats.Conn, options ...nrpc.ClientOption) (ExampleService, error) {
+func NewEchoServiceClient(conn *nats.Conn, options ...nrpc.ClientOption) (EchoService, error) {
 	clientOptions, err := nrpc.NewClientOptions(options...)
 	if err != nil {
 		return nil, err
 	}
 
-	return &exampleServiceClient{
+	return &echoServiceClient{
 		conn:    conn,
 		options: clientOptions,
 	}, nil
 }
 
-type exampleServiceClient struct {
+type echoServiceClient struct {
 	options *nrpc.ClientOptions
 	conn    *nats.Conn
 }
 
-func (client *exampleServiceClient) Echo(request *EchoRequest) (*EchoReply, error) {
-	requestwrap := new(nrpc.RequestWrapper)
-
-	datapb, err := anypb.New(request)
-	if err != nil {
-		return nil, err
-	}
-	requestwrap.Data = datapb
-
-	data, err := requestwrap.MarshalVT()
+func (client *echoServiceClient) Echo(request *EchoRequest) (*EchoReply, error) {
+	data, err := proto.Marshal(request)
 	if err != nil {
 		return nil, err
 	}
 
-	resmsg, err := client.conn.Request(client.options.ApplyNamespace("ExampleService.Echo"), data, client.options.Timeout)
+	resmsg, err := client.conn.Request(client.options.ApplyNamespace("EchoService.echo"), data, client.options.Timeout)
 	if err != nil {
 		return nil, err
 	}
 
-	responsewrap := new(nrpc.ResponseWrapper)
-	if err := responsewrap.UnmarshalVT(resmsg.Data); err != nil {
+	if err := nrpc.ParseError(resmsg); err != nil {
 		return nil, err
 	}
 
-	switch response := responsewrap.Data.(type) {
-	case *nrpc.ResponseWrapper_Ok:
-		ok := new(EchoReply)
-		if err := response.Ok.UnmarshalTo(ok); err != nil {
-			return nil, err
-		}
-		return ok, nil
-	case *nrpc.ResponseWrapper_Err:
-		return nil, errors.New(response.Err)
-	default:
-		return nil, fmt.Errorf("unsupported response type: %T", response)
+	response := new(EchoReply)
+	if err := proto.Unmarshal(resmsg.Data, response); err != nil {
+		return nil, err
 	}
+	return response, nil
 }
 
-func NewExampleServiceServer(conn *nats.Conn, service ExampleService, options ...nrpc.ServerOption) (nrpc.Server, error) {
+func NewEchoServiceServer(conn *nats.Conn, service EchoService, options ...nrpc.ServerOption) (nrpc.Server, error) {
 	serverOptions, err := nrpc.NewServerOptions(options...)
 	if err != nil {
 		return nil, err
 	}
 
-	return &exampleServiceServer{
-		conn:    conn,
+	compat := &echoServiceServerCompat{
 		options: serverOptions,
 		service: service,
-	}, nil
-}
-
-type exampleServiceServer struct {
-	options *nrpc.ServerOptions
-	service ExampleService
-	conn    *nats.Conn
-	// Internal only fields
-	lock sync.Mutex
-	stop chan struct{}
-	errs chan error
-}
-
-func (server *exampleServiceServer) Start() error {
-	server.lock.Lock()
-	defer server.lock.Unlock()
-
-	// We're already running, so don't do anything
-	if server.stop != nil {
-		return nil
 	}
-
-	// Create a stop signal channel
-	server.stop = make(chan struct{})
-
-	// Create a channel for handling errors.
-	server.errs = make(chan error)
-	go func() {
-		for err := range server.errs {
-			// Only do something if we have an error handler
-			if server.options.ErrorHandler != nil {
-				server.options.ErrorHandler(err)
-			}
-		}
-	}()
-
-	// Start Echo server loop
-	if err := server.startSubscription(server.options.ApplyNamespace("ExampleService.Echo"), server.serveEcho); err != nil {
-		close(server.stop)
-		close(server.errs)
-		return err
-	}
-
-	return nil
-}
-
-// Stop the RPC server that wraps ExampleService
-func (server *exampleServiceServer) Stop() error {
-	server.lock.Lock()
-	defer server.lock.Unlock()
-
-	// We're not running, so do nothing.
-	if server.stop == nil {
-		return nil
-	}
-
-	// Stop all workers, clean up subscriptions
-	close(server.stop)
-	close(server.errs)
-	server.stop = nil
-	server.errs = nil
-	return nil
-}
-
-func (server *exampleServiceServer) startSubscription(subject string, handler func(*nats.Msg)) error {
-	msgs := make(chan *nats.Msg, server.options.BufferSize)
-
-	sub, err := server.conn.ChanQueueSubscribe(subject, server.options.QueueGroup, msgs)
+	svc, err := micro.AddService(conn, micro.Config{
+		Name:    "EchoService",
+		Version: "0.0.0",
+	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	fmt.Println("Listening on:", subject)
+	grp := serverOptions.ApplyNamespace(svc).AddGroup("EchoService")
 
-	// Remove the subscription and clean up when
-	// the stop channel is closed
-	go func() {
-		<-server.stop
-		if err := sub.Unsubscribe(); err != nil {
-			server.errs <- err
-		}
-		close(msgs)
-	}()
+	if err := grp.AddEndpoint("echo", micro.HandlerFunc(compat.serveEcho)); err != nil {
+		svc.Stop()
+		return nil, err
+	}
 
-	go func() {
-		// Handle incoming server messages
-		for msg := range msgs {
-			handler(msg)
-		}
-	}()
-	return nil
+	return svc, nil
 }
 
-func (server *exampleServiceServer) serveEcho(msg *nats.Msg) {
-	request := new(EchoRequest)
-	requestwrap := new(nrpc.RequestWrapper)
-	responsewrap := new(nrpc.ResponseWrapper)
+type echoServiceServerCompat struct {
+	options *nrpc.ServerOptions
+	service EchoService
+}
 
-	if err := requestwrap.UnmarshalVT(msg.Data); err != nil {
-		responsewrap.Data = &nrpc.ResponseWrapper_Err{Err: err.Error()}
-		server.errs <- err
-	} else if err := anypb.UnmarshalTo(requestwrap.Data, request, proto.UnmarshalOptions{}); err != nil {
-		responsewrap.Data = &nrpc.ResponseWrapper_Err{Err: err.Error()}
-		server.errs <- err
-	} else if response, err := server.service.Echo(request); err != nil {
-		responsewrap.Data = &nrpc.ResponseWrapper_Err{Err: err.Error()}
-		server.errs <- err
-	} else if datapb, err := anypb.New(response); err != nil {
-		responsewrap.Data = &nrpc.ResponseWrapper_Err{Err: err.Error()}
-		server.errs <- err
-	} else {
-		responsewrap.Data = &nrpc.ResponseWrapper_Ok{Ok: datapb}
+func (server *echoServiceServerCompat) handleError(err error) {
+	if server.options.ErrorHandler != nil {
+		server.options.ErrorHandler(err)
+	}
+}
+
+func (server *echoServiceServerCompat) serveEcho(msg micro.Request) {
+	request := new(EchoRequest)
+	if err := proto.Unmarshal(msg.Data(), request); err != nil {
+		msg.Error(strconv.Itoa(500), err.Error(), nil)
+		server.handleError(err)
+		return
 	}
 
-	// Send our response back
-	if data, err := responsewrap.MarshalVT(); err != nil {
-		server.errs <- err
-	} else if err := msg.Respond(data); err != nil {
-		server.errs <- err
+	response, err := server.service.Echo(request)
+	if err != nil {
+		e := new(nrpc.Error)
+		if !errors.As(err, &e) {
+			e = nrpc.NewError(500, err.Error())
+		}
+
+		msg.Error(strconv.Itoa(e.Code()), e.Error(), nil)
+		server.handleError(err)
+	}
+
+	data, err := proto.Marshal(response)
+	if err != nil {
+		msg.Error(strconv.Itoa(500), err.Error(), nil)
+		server.handleError(err)
+		return
+	}
+
+	if err := msg.Respond(data); err != nil {
+		server.handleError(err)
 	}
 }

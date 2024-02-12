@@ -15,20 +15,20 @@ func ProtoServices(p *protogen.Plugin) []File {
 		for _, protoService := range protoFile.Services {
 			service := Service{
 				Name:    protoService.GoName,
+				RawName: string(protoService.Desc.Name()),
 				Methods: make([]Method, 0),
 			}
 
 			for _, protoMethod := range protoService.Methods {
 				input := parseType(protoFile, protoMethod.Input)
-				input.Stream = protoMethod.Desc.IsStreamingClient()
 
 				output := parseType(protoFile, protoMethod.Output)
-				output.Stream = protoMethod.Desc.IsStreamingServer()
 
 				service.Methods = append(service.Methods, Method{
-					Name:   protoMethod.GoName,
-					Input:  input,
-					Output: output,
+					Name:    protoMethod.GoName,
+					RawName: string(protoMethod.Desc.Name()),
+					Input:   input,
+					Output:  output,
 				})
 			}
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	example "github.com/egoodhall/nrpc/example/go"
+	"github.com/egoodhall/nrpc/go/pkg/nrpc"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
@@ -27,21 +28,48 @@ func newConn(t *testing.T, srv *server.Server) *nats.Conn {
 func TestServerAndClientWorkTogether(t *testing.T) {
 	nsrv := test.RunDefaultServer()
 
-	client, err := example.NewExampleServiceClient(newConn(t, nsrv))
+	client, err := example.NewEchoServiceClient(newConn(t, nsrv))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	server, err := example.NewExampleServiceServer(newConn(t, nsrv), new(example.ServiceImpl))
+	server, err := example.NewEchoServiceServer(newConn(t, nsrv), new(example.ServiceImpl))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Start the server. This will start a pool of goroutines
 	// listening for messages, and responding to them
-	if err := server.Start(); err != nil {
+	defer func() {
+		if err := server.Stop(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	if response, err := client.Echo(&example.EchoRequest{Message: "Test!"}); err != nil {
+		t.Fatal(err)
+	} else if response.Message != "Test!" {
+		t.Fatalf("Response does not match: '%s' != 'Test!'", response)
+	}
+}
+
+func TestHashNamespacing(t *testing.T) {
+	nsrv := test.RunDefaultServer()
+
+	hashNsOpt := nrpc.HashNamespace("test", "a", "b", "c")
+
+	client, err := example.NewEchoServiceClient(newConn(t, nsrv), hashNsOpt)
+	if err != nil {
 		t.Fatal(err)
 	}
+
+	server, err := example.NewEchoServiceServer(newConn(t, nsrv), new(example.ServiceImpl), hashNsOpt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Start the server. This will start a pool of goroutines
+	// listening for messages, and responding to them
 	defer func() {
 		if err := server.Stop(); err != nil {
 			t.Fatal(err)

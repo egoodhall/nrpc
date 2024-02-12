@@ -7,16 +7,13 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/nats-io/nats.go/micro"
 )
 
 var (
 	ErrServerAlreadyStarted = errors.New("server already started")
 )
-
-type Server interface {
-	Start() error
-	Stop() error
-}
 
 // An option that can be used on both the server
 // and client.
@@ -50,7 +47,7 @@ type ClientOptions struct {
 	Namespace string
 }
 
-func (opt *ServerOptions) ApplyNamespace(to string) string {
+func (opt *ClientOptions) ApplyNamespace(to string) string {
 	if opt.Namespace != "" {
 		return fmt.Sprintf("%s.%s", opt.Namespace, to)
 	}
@@ -84,9 +81,11 @@ type ServerOptions struct {
 	BufferSize int
 }
 
-func (opt *ClientOptions) ApplyNamespace(to string) string {
+func (opt *ServerOptions) ApplyNamespace(to micro.Group) micro.Group {
 	if opt.Namespace != "" {
-		return fmt.Sprintf("%s.%s", opt.Namespace, to)
+		for _, segment := range strings.Split(opt.Namespace, ".") {
+			to = to.AddGroup(segment)
+		}
 	}
 	return to
 }
