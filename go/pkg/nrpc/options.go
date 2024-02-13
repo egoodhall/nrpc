@@ -84,6 +84,9 @@ type ServerOptions struct {
 func (opt *ServerOptions) ApplyNamespace(to micro.Group) micro.Group {
 	if opt.Namespace != "" {
 		for _, segment := range strings.Split(opt.Namespace, ".") {
+			if segment == "" {
+				continue
+			}
 			to = to.AddGroup(segment)
 		}
 	}

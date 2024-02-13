@@ -11,16 +11,18 @@ type File struct {
 }
 
 type Service struct {
-	Name    string
-	RawName string
-	Methods []Method
+	Name     string
+	RawName  string
+	Comments string
+	Methods  []Method
 }
 
 type Method struct {
-	Name    string
-	RawName string
-	Input   Type
-	Output  Type
+	Name     string
+	RawName  string
+	Comments string
+	Input    Type
+	Output   Type
 }
 
 type Type struct {

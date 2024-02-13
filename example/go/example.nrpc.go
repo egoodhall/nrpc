@@ -4,18 +4,22 @@ package example
 
 import (
 	"errors"
-	"strconv"
-
 	"github.com/egoodhall/nrpc/go/pkg/nrpc"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/micro"
 	"google.golang.org/protobuf/proto"
+	"strconv"
 )
 
+// EchoService replies with the same message that
+// was sent to it
 type EchoService interface {
+	// Echo a message back to the caller
 	Echo(*EchoRequest) (*EchoReply, error)
 }
 
+// Construct a NATS-backed implementation of EchoService configured
+// with the given connection and options
 func NewEchoServiceClient(conn *nats.Conn, options ...nrpc.ClientOption) (EchoService, error) {
 	clientOptions, err := nrpc.NewClientOptions(options...)
 	if err != nil {
@@ -29,25 +33,31 @@ func NewEchoServiceClient(conn *nats.Conn, options ...nrpc.ClientOption) (EchoSe
 }
 
 type echoServiceClient struct {
+	// The gathered options passed to NewEchoServiceClient
 	options *nrpc.ClientOptions
-	conn    *nats.Conn
+	// The underlying NATS connection
+	conn *nats.Conn
 }
 
 func (client *echoServiceClient) Echo(request *EchoRequest) (*EchoReply, error) {
+	// Marshal the EchoRequest request
 	data, err := proto.Marshal(request)
 	if err != nil {
 		return nil, err
 	}
 
+	// Send the request
 	resmsg, err := client.conn.Request(client.options.ApplyNamespace("EchoService.echo"), data, client.options.Timeout)
 	if err != nil {
 		return nil, err
 	}
 
+	// Check whether we received an error
 	if err := nrpc.ParseError(resmsg); err != nil {
 		return nil, err
 	}
 
+	// Unmarshal the EchoReply from the NATS response
 	response := new(EchoReply)
 	if err := proto.Unmarshal(resmsg.Data, response); err != nil {
 		return nil, err
@@ -55,16 +65,23 @@ func (client *echoServiceClient) Echo(request *EchoRequest) (*EchoReply, error) 
 	return response, nil
 }
 
+// Construct a new NATS-backed server for the given EchoService implementation.
+// The server can be configured to run with a namespace, allowing multiple
+// servers to run the same service with isolated subjects.
 func NewEchoServiceServer(conn *nats.Conn, service EchoService, options ...nrpc.ServerOption) (nrpc.Server, error) {
+	// Gather all the options we were given
 	serverOptions, err := nrpc.NewServerOptions(options...)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build a compatibility wrapper around our EchoService implementation
 	compat := &echoServiceServerCompat{
 		options: serverOptions,
 		service: service,
 	}
+
+	// Create our NATS service
 	svc, err := micro.AddService(conn, micro.Config{
 		Name:    "EchoService",
 		Version: "0.0.0",
@@ -72,8 +89,11 @@ func NewEchoServiceServer(conn *nats.Conn, service EchoService, options ...nrpc.
 	if err != nil {
 		return nil, err
 	}
+
+	// Apply a namespace, if we have the option set.
 	grp := serverOptions.ApplyNamespace(svc).AddGroup("EchoService")
 
+	// Add an endpoint at 'EchoService.echo' (or 'namespace.EchoService.echo' if a namespace was set)
 	if err := grp.AddEndpoint("echo", micro.HandlerFunc(compat.serveEcho)); err != nil {
 		svc.Stop()
 		return nil, err
@@ -83,24 +103,33 @@ func NewEchoServiceServer(conn *nats.Conn, service EchoService, options ...nrpc.
 }
 
 type echoServiceServerCompat struct {
+	// User-configured options passed to NewServer
 	options *nrpc.ServerOptions
+	// The underlying EchoService implementation
 	service EchoService
 }
 
+// Errors that occur during handling/translation will be passed
+// to this method. Use the nrpc.WithErrorHandler(handler) option
+// to supply a custom handler.
 func (server *echoServiceServerCompat) handleError(err error) {
 	if server.options.ErrorHandler != nil {
 		server.options.ErrorHandler(err)
 	}
 }
 
+// serveEcho wraps the EchoService's 'Echo' method, handling any required
+// translation to/from the NATS transport layer
 func (server *echoServiceServerCompat) serveEcho(msg micro.Request) {
+	// Parse EchoRequest from the NATS message body
 	request := new(EchoRequest)
 	if err := proto.Unmarshal(msg.Data(), request); err != nil {
-		msg.Error(strconv.Itoa(500), err.Error(), nil)
+		msg.Error(strconv.Itoa(400), err.Error(), nil)
 		server.handleError(err)
 		return
 	}
 
+	// Give the EchoRequest to our EchoService implementation
 	response, err := server.service.Echo(request)
 	if err != nil {
 		e := new(nrpc.Error)
@@ -112,6 +141,7 @@ func (server *echoServiceServerCompat) serveEcho(msg micro.Request) {
 		server.handleError(err)
 	}
 
+	// Marshal the returned EchoReply
 	data, err := proto.Marshal(response)
 	if err != nil {
 		msg.Error(strconv.Itoa(500), err.Error(), nil)
@@ -119,6 +149,7 @@ func (server *echoServiceServerCompat) serveEcho(msg micro.Request) {
 		return
 	}
 
+	// Send our response
 	if err := msg.Respond(data); err != nil {
 		server.handleError(err)
 	}

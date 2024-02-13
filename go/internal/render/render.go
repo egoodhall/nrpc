@@ -15,7 +15,6 @@ const (
 	pkgMicro  = "github.com/nats-io/nats.go/micro"
 	pkgNrpc   = "github.com/egoodhall/nrpc/go/pkg/nrpc"
 	pkgProto  = "google.golang.org/protobuf/proto"
-	pkgAnypb  = "google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -23,16 +22,11 @@ const (
 	connName         = "conn"
 	serverName       = "server"
 	dataName         = "data"
-	dataPbName       = "datapb"
 	handleErrorName  = "handleError"
 	optionsFieldName = "options"
 	requestName      = "request"
-	requestWrapName  = "requestwrap"
-	responseErrName  = "err"
 	responseMsgName  = "resmsg"
 	responseName     = "response"
-	responseOkName   = "ok"
-	responseWrapName = "responsewrap"
 	serviceFieldName = "service"
 )
 
@@ -59,7 +53,6 @@ func (gen *Generator) generate(filedef parse.File) error {
 	file.ImportName(pkgMicro, "micro")
 	file.ImportName(pkgNrpc, "nrpc")
 	file.ImportName(pkgProto, "proto")
-	file.ImportName(pkgAnypb, "anypb")
 
 	for _, service := range filedef.Services {
 		gen.serviceInterface(file, service)
@@ -73,14 +66,22 @@ func (gen *Generator) generate(filedef parse.File) error {
 }
 
 func (gen *Generator) serviceInterface(file *jen.File, service parse.Service) {
+	if service.Comments != "" {
+		file.Comment(service.Comments)
+	}
 	file.Type().Id(service.Name).InterfaceFunc(func(g *jen.Group) {
 		for _, method := range service.Methods {
+			if method.Comments != "" {
+				g.Comment(method.Comments)
+			}
 			g.Id(method.Name).Params(gen.typeName(method.Input, true)).Params(gen.typeName(method.Output, true), jen.Error())
 		}
 	}).Line()
 }
 
 func (gen *Generator) clientConstructor(file *jen.File, service parse.Service) {
+	file.Commentf("Construct a NATS-backed implementation of %s configured", service.Name)
+	file.Comment("with the given connection and options")
 	file.Func().Id("New"+service.Name+"Client").Params(
 		jen.Id(connName).Op("*").Qual(pkgNats, "Conn"),
 		jen.Id(optionsFieldName).Op("...").Qual(pkgNrpc, "ClientOption"),
@@ -100,7 +101,9 @@ func (gen *Generator) clientConstructor(file *jen.File, service parse.Service) {
 func (gen *Generator) clientImpl(file *jen.File, service parse.Service) {
 	// Client struct definition
 	file.Type().Add(gen.clientTypeName(service, false)).Struct(
+		jen.Commentf("The gathered options passed to New%sClient", service.Name),
 		jen.Id(optionsFieldName).Op("*").Qual(pkgNrpc, "ClientOptions"),
+		jen.Comment("The underlying NATS connection"),
 		jen.Id(connName).Op("*").Qual(pkgNats, "Conn"),
 	)
 
@@ -122,11 +125,13 @@ func (gen *Generator) clientMethodSignature(service parse.Service, method parse.
 }
 
 func (gen *Generator) clientMethodBody(g *jen.Group, service parse.Service, method parse.Method) {
+	g.Commentf("Marshal the %s request", method.Input.Name)
 	g.List(jen.Id(dataName), jen.Err()).Op(":=").Qual(pkgProto, "Marshal").Params(jen.Id(requestName))
 	g.If(jen.Err().Op("!=").Nil()).Block(
 		jen.Return(jen.Nil(), jen.Err()),
 	)
 	g.Line()
+	g.Comment("Send the request")
 	g.List(jen.Id(responseMsgName), jen.Err()).Op(":=").Id(clientName).Dot(connName).Dot("Request").Params(
 		gen.natsSubject(clientName, service, method),
 		jen.Id(dataName),
@@ -136,6 +141,7 @@ func (gen *Generator) clientMethodBody(g *jen.Group, service parse.Service, meth
 		jen.Return(jen.Nil(), jen.Err()),
 	)
 	g.Line()
+	g.Comment("Check whether we received an error")
 	g.If(
 		jen.Err().Op(":=").Qual(pkgNrpc, "ParseError").Params(jen.Id(responseMsgName)),
 		jen.Err().Op("!=").Nil(),
@@ -143,6 +149,7 @@ func (gen *Generator) clientMethodBody(g *jen.Group, service parse.Service, meth
 		jen.Return(jen.Nil(), jen.Err()),
 	)
 	g.Line()
+	g.Commentf("Unmarshal the %s from the NATS response", method.Output.Name)
 	g.Id(responseName).Op(":=").New(gen.typeName(method.Output, false))
 	g.If(
 		jen.Err().Op(":=").Qual(pkgProto, "Unmarshal").Params(jen.Id(responseMsgName).Dot("Data"), jen.Id(responseName)),
@@ -154,20 +161,27 @@ func (gen *Generator) clientMethodBody(g *jen.Group, service parse.Service, meth
 }
 
 func (gen *Generator) serverConstructor(file *jen.File, service parse.Service) {
+	file.Commentf("Construct a new NATS-backed server for the given %s implementation.", service.Name)
+	file.Comment("The server can be configured to run with a namespace, allowing multiple")
+	file.Comment("servers to run the same service with isolated subjects.")
 	file.Func().Id("New"+service.Name+"Server").Params(
 		jen.Id(connName).Op("*").Qual(pkgNats, "Conn"),
 		jen.Id(serviceFieldName).Id(service.Name),
 		jen.Id(optionsFieldName).Op("...").Qual(pkgNrpc, "ServerOption"),
 	).Params(jen.Qual(pkgNrpc, "Server"), jen.Error()).BlockFunc(func(g *jen.Group) {
+		g.Comment("Gather all the options we were given")
 		g.List(jen.Id("serverOptions"), jen.Err()).Op(":=").Qual(pkgNrpc, "NewServerOptions").Params(jen.Id(optionsFieldName).Op("..."))
 		g.If(jen.Err().Op("!=").Nil()).Block(
 			jen.Return(jen.Nil(), jen.Err()),
 		)
 		g.Line()
+		g.Commentf("Build a compatibility wrapper around our %s implementation", service.Name)
 		g.Id("compat").Op(":=").Op("&").Add(gen.serverTypeName(service, false)).Values(jen.Dict{
 			jen.Id(optionsFieldName): jen.Id("serverOptions"),
 			jen.Id(serviceFieldName): jen.Id(serviceFieldName),
 		})
+		g.Line()
+		g.Comment("Create our NATS service")
 		g.List(jen.Id("svc"), jen.Err()).Op(":=").Qual(pkgMicro, "AddService").Params(
 			jen.Id(connName),
 			jen.Qual(pkgMicro, "Config").Values(jen.Dict{
@@ -175,15 +189,20 @@ func (gen *Generator) serverConstructor(file *jen.File, service parse.Service) {
 				jen.Id("Version"): jen.Lit("0.0.0"),
 			}),
 		)
-
 		g.If(jen.Err().Op("!=").Nil()).Block(
 			jen.Return(jen.Nil(), jen.Err()),
 		)
 
-		g.Id("grp").Op(":=").Id("svc").Dot("AddGroup").Params(jen.Lit(service.RawName))
+		g.Line()
+		g.Comment("Apply a namespace, if we have the option set.")
+		g.Id("grp").Op(":=").Id("serverOptions").Dot("ApplyNamespace").Params(jen.Id("svc")).Dot("AddGroup").Params(jen.Lit(service.RawName))
 
 		for _, method := range service.Methods {
 			g.Line()
+			g.Commentf(
+				"Add an endpoint at '%s.%s' (or 'namespace.%s.%s' if a namespace was set)",
+				service.RawName, method.RawName, service.RawName, method.RawName,
+			)
 			g.If(
 				jen.Err().Op(":=").Id("grp").Dot("AddEndpoint").Params(
 					jen.Lit(method.RawName),
@@ -204,7 +223,9 @@ func (gen *Generator) serverConstructor(file *jen.File, service parse.Service) {
 func (gen *Generator) serverImpl(file *jen.File, service parse.Service) {
 	// Server struct definition
 	file.Type().Add(gen.serverTypeName(service, false)).Struct(
+		jen.Comment("User-configured options passed to NewServer"),
 		jen.Id(optionsFieldName).Op("*").Qual(pkgNrpc, "ServerOptions"),
+		jen.Commentf("The underlying %s implementation", service.Name),
 		jen.Id(serviceFieldName).Id(service.Name),
 	)
 
@@ -221,6 +242,9 @@ func (gen *Generator) serverImpl(file *jen.File, service parse.Service) {
 }
 
 func (gen *Generator) serverErrorHandler(file *jen.File, service parse.Service) {
+	file.Comment("Errors that occur during handling/translation will be passed")
+	file.Comment("to this method. Use the nrpc.WithErrorHandler(handler) option")
+	file.Comment("to supply a custom handler.")
 	file.Func().Params(
 		jen.Id(serverName).Add(gen.serverTypeName(service, true)),
 	).Add(jen.Id(handleErrorName)).Params(jen.Err().Error()).Block(
@@ -231,11 +255,17 @@ func (gen *Generator) serverErrorHandler(file *jen.File, service parse.Service) 
 }
 
 func (gen *Generator) serverHandler(file *jen.File, service parse.Service, method parse.Method) {
+	file.Commentf(
+		"%s wraps the %s's '%s' method, handling any required",
+		gen.serverHandlerName(method), service.Name, method.Name,
+	)
+	file.Comment("translation to/from the NATS transport layer")
 	file.Func().Params(
 		jen.Id(serverName).Add(gen.serverTypeName(service, true)),
 	).Add(jen.Id(gen.serverHandlerName(method))).Params(
 		jen.Id("msg").Qual(pkgMicro, "Request"),
 	).Block(
+		jen.Commentf("Parse %s from the NATS message body", method.Input.Name),
 		jen.Id(requestName).Op(":=").New(gen.typeName(method.Input, false)),
 		jen.If(
 			jen.Err().Op(":=").Qual(pkgProto, "Unmarshal").Params(
@@ -245,7 +275,7 @@ func (gen *Generator) serverHandler(file *jen.File, service parse.Service, metho
 			jen.Err().Op("!=").Nil(),
 		).Block(
 			jen.Id("msg").Dot("Error").Params(
-				jen.Qual("strconv", "Itoa").Params(jen.Lit(500)),
+				jen.Qual("strconv", "Itoa").Params(jen.Lit(400)),
 				jen.Err().Dot("Error").Params(),
 				jen.Nil(),
 			),
@@ -253,6 +283,7 @@ func (gen *Generator) serverHandler(file *jen.File, service parse.Service, metho
 			jen.Return(),
 		),
 		jen.Line(),
+		jen.Commentf("Give the %s to our %s implementation", method.Input.Name, service.RawName),
 		jen.List(jen.Id(responseName), jen.Err()).Op(":=").
 			Id(serverName).Dot(serviceFieldName).Dot(method.Name).Params(jen.Id(requestName)),
 		jen.If(jen.Err().Op("!=").Nil()).Block(
@@ -269,6 +300,7 @@ func (gen *Generator) serverHandler(file *jen.File, service parse.Service, metho
 			jen.Id(serverName).Dot(handleErrorName).Params(jen.Err()),
 		),
 		jen.Line(),
+		jen.Commentf("Marshal the returned %s", method.Output.Name),
 		jen.List(jen.Id("data"), jen.Err()).Op(":=").Qual(pkgProto, "Marshal").Params(jen.Id(responseName)),
 		jen.If(jen.Err().Op("!=").Nil()).Block(
 			jen.Id("msg").Dot("Error").Params(
@@ -280,6 +312,7 @@ func (gen *Generator) serverHandler(file *jen.File, service parse.Service, metho
 			jen.Return(),
 		),
 		jen.Line(),
+		jen.Comment("Send our response"),
 		jen.If(
 			jen.Id("err").Op(":=").Id("msg").Dot("Respond").Params(jen.Id("data")),
 			jen.Err().Op("!=").Nil(),

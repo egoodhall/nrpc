@@ -1,6 +1,8 @@
 package parse
 
 import (
+	"strings"
+
 	"google.golang.org/protobuf/compiler/protogen"
 )
 
@@ -14,9 +16,10 @@ func ProtoServices(p *protogen.Plugin) []File {
 		// as we're given them.
 		for _, protoService := range protoFile.Services {
 			service := Service{
-				Name:    protoService.GoName,
-				RawName: string(protoService.Desc.Name()),
-				Methods: make([]Method, 0),
+				Name:     protoService.GoName,
+				RawName:  string(protoService.Desc.Name()),
+				Comments: strings.Trim(protoService.Comments.Leading.String(), "\t\n "),
+				Methods:  make([]Method, 0),
 			}
 
 			for _, protoMethod := range protoService.Methods {
@@ -25,10 +28,11 @@ func ProtoServices(p *protogen.Plugin) []File {
 				output := parseType(protoFile, protoMethod.Output)
 
 				service.Methods = append(service.Methods, Method{
-					Name:    protoMethod.GoName,
-					RawName: string(protoMethod.Desc.Name()),
-					Input:   input,
-					Output:  output,
+					Name:     protoMethod.GoName,
+					RawName:  string(protoMethod.Desc.Name()),
+					Comments: strings.Trim(protoMethod.Comments.Leading.String(), "\t\n "),
+					Input:    input,
+					Output:   output,
 				})
 			}
 

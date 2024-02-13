@@ -1,16 +1,16 @@
 
-.PHONY: example example_go example_java protos install install-gravel
+.PHONY: example example_go example_java install install-gravel
 
-all: protos example
+all: example
 
-protos:
-	@mkdir -p java/target/generated-sources/protobuf
-	@protoc \
-	--go_out=go --go_opt=module=github.com/egoodhall/nrpc/go \
-	--go-vtproto_out=go --go-vtproto_opt=module=github.com/egoodhall/nrpc/go \
-	--go-vtproto_opt=features=marshal+unmarshal+size \
-	--java_out=java/target/generated-sources/protobuf \
-	proto/nrpc.proto
+# protos:
+# 	@mkdir -p java/target/generated-sources/protobuf
+# 	@protoc \
+# 	--go_out=go --go_opt=module=github.com/egoodhall/nrpc/go \
+# 	--go-vtproto_out=go --go-vtproto_opt=module=github.com/egoodhall/nrpc/go \
+# 	--go-vtproto_opt=features=marshal+unmarshal+size \
+# 	--java_out=java/target/generated-sources/protobuf \
+# 	proto/nrpc.proto
 
 example: example_go example_java
 
